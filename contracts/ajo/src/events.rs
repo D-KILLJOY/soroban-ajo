@@ -67,3 +67,32 @@ pub fn emit_group_cancelled(
     env.events()
         .publish(topics, (creator, member_count, refund_per_member));
 }
+
+/// Emit an event when a member is invited to a group
+pub fn emit_member_invited(
+    env: &Env,
+    group_id: u64,
+    inviter: &Address,
+    invitee: &Address,
+) {
+    let topics = (symbol_short!("invited"), group_id);
+    env.events().publish(topics, (inviter, invitee));
+}
+
+/// Emit an event when an invitation is accepted
+pub fn emit_invitation_accepted(env: &Env, group_id: u64, invitee: &Address) {
+    let topics = (symbol_short!("inv_acc"), group_id);
+    env.events().publish(topics, invitee);
+}
+
+/// Emit an event when a join request is submitted
+pub fn emit_join_requested(env: &Env, group_id: u64, requester: &Address) {
+    let topics = (symbol_short!("req_join"), group_id);
+    env.events().publish(topics, requester);
+}
+
+/// Emit an event when a join request is approved
+pub fn emit_join_approved(env: &Env, group_id: u64, requester: &Address) {
+    let topics = (symbol_short!("req_app"), group_id);
+    env.events().publish(topics, requester);
+}

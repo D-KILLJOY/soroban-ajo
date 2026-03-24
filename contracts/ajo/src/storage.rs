@@ -1,5 +1,7 @@
 use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 
+use crate::types::{GroupInvitation, JoinRequest};
+
 /// Logical storage key categories used by the Ajo contract.
 ///
 /// Soroban storage uses raw key values; this enum documents the naming
@@ -32,6 +34,14 @@ pub enum StorageKey {
     /// Optional metadata for a group.
     /// Stored in persistent storage under `("METADATA", group_id)`.
     GroupMetadata(u64),
+
+    /// Invitation to join a group.
+    /// Stored in persistent storage under `("INVITE", group_id, invitee)`.
+    Invitation(u64, Address),
+
+    /// Join request for a group.
+    /// Stored in persistent storage under `("REQUEST", group_id, requester)`.
+    JoinRequest(u64, Address),
 }
 
 impl StorageKey {
@@ -54,6 +64,8 @@ impl StorageKey {
             StorageKey::Contribution(_, _, _) => symbol_short!("CONTRIB"),
             StorageKey::PayoutReceived(_, _) => symbol_short!("PAYOUT"),
             StorageKey::GroupMetadata(_) => symbol_short!("METADATA"),
+            StorageKey::Invitation(_, _) => symbol_short!("INVITE"),
+            StorageKey::JoinRequest(_, _) => symbol_short!("REQUEST"),
         }
     }
 }
@@ -278,4 +290,120 @@ pub fn get_group_metadata(env: &Env, group_id: u64) -> Option<crate::types::Grou
 pub fn has_group_metadata(env: &Env, group_id: u64) -> bool {
     let key = (symbol_short!("METADATA"), group_id);
     env.storage().persistent().has(&key)
+}
+
+/// Stores an invitation in persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the invitation is for
+/// * `invitee` - The address being invited
+/// * `invitation` - The invitation data to store
+pub fn store_invitation(
+    env: &Env,
+    group_id: u64,
+    invitee: &Address,
+    invitation: &GroupInvitation,
+) {
+    let key = (symbol_short!("INVITE"), group_id, invitee);
+    env.storage().persistent().set(&key, invitation);
+}
+
+/// Retrieves an invitation from persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the invitation is for
+/// * `invitee` - The address being invited
+///
+/// # Returns
+/// `Some(GroupInvitation)` if it exists, `None` otherwise
+pub fn get_invitation(
+    env: &Env,
+    group_id: u64,
+    invitee: &Address,
+) -> Option<GroupInvitation> {
+    let key = (symbol_short!("INVITE"), group_id, invitee);
+    env.storage().persistent().get(&key)
+}
+
+/// Checks if an invitation exists.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the invitation is for
+/// * `invitee` - The address being invited
+///
+/// # Returns
+/// `true` if invitation exists, `false` otherwise
+pub fn has_invitation(env: &Env, group_id: u64, invitee: &Address) -> bool {
+    let key = (symbol_short!("INVITE"), group_id, invitee);
+    env.storage().persistent().has(&key)
+}
+
+/// Removes an invitation from persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the invitation is for
+/// * `invitee` - The address being invited
+pub fn remove_invitation(env: &Env, group_id: u64, invitee: &Address) {
+    let key = (symbol_short!("INVITE"), group_id, invitee);
+    env.storage().persistent().remove(&key);
+}
+
+/// Stores a join request in persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the request is for
+/// * `requester` - The address requesting to join
+/// * `request` - The join request data to store
+pub fn store_join_request(
+    env: &Env,
+    group_id: u64,
+    requester: &Address,
+    request: &JoinRequest,
+) {
+    let key = (symbol_short!("REQUEST"), group_id, requester);
+    env.storage().persistent().set(&key, request);
+}
+
+/// Retrieves a join request from persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the request is for
+/// * `requester` - The address requesting to join
+///
+/// # Returns
+/// `Some(JoinRequest)` if it exists, `None` otherwise
+pub fn get_join_request(env: &Env, group_id: u64, requester: &Address) -> Option<JoinRequest> {
+    let key = (symbol_short!("REQUEST"), group_id, requester);
+    env.storage().persistent().get(&key)
+}
+
+/// Checks if a join request exists.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the request is for
+/// * `requester` - The address requesting to join
+///
+/// # Returns
+/// `true` if request exists, `false` otherwise
+pub fn has_join_request(env: &Env, group_id: u64, requester: &Address) -> bool {
+    let key = (symbol_short!("REQUEST"), group_id, requester);
+    env.storage().persistent().has(&key)
+}
+
+/// Removes a join request from persistent storage.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `group_id` - The group the request is for
+/// * `requester` - The address requesting to join
+pub fn remove_join_request(env: &Env, group_id: u64, requester: &Address) {
+    let key = (symbol_short!("REQUEST"), group_id, requester);
+    env.storage().persistent().remove(&key);
 }

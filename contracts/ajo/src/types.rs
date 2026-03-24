@@ -1,5 +1,65 @@
 use soroban_sdk::{contracttype, Address, Vec};
 
+/// Represents the access type for a group.
+/// Controls how new members can join the group.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GroupAccessType {
+    /// Members can join freely without any restrictions (default).
+    Open,
+    /// Members can only join via an invitation.
+    InviteOnly,
+    /// Members must submit a join request that requires approval from the creator.
+    ApprovalRequired,
+}
+
+/// Represents an invitation to join a group.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GroupInvitation {
+    /// The group this invitation is for.
+    pub group_id: u64,
+    /// Address of the person being invited.
+    pub invitee: Address,
+    /// Address of the person who sent the invitation.
+    pub inviter: Address,
+    /// Unix timestamp (seconds) when the invitation was created.
+    pub created_at: u64,
+    /// Unix timestamp (seconds) when the invitation expires.
+    pub expires_at: u64,
+    /// Whether the invitation has been accepted.
+    pub accepted: bool,
+}
+
+/// Status of a join request.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RequestStatus {
+    /// Request is pending approval.
+    Pending,
+    /// Request has been approved.
+    Approved,
+    /// Request has been rejected.
+    Rejected,
+}
+
+/// Represents a request to join a group.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JoinRequest {
+    /// The group this request is for.
+    pub group_id: u64,
+    /// Address of the person requesting to join.
+    pub requester: Address,
+    /// Unix timestamp (seconds) when the request was created.
+    pub created_at: u64,
+    /// Current status of the request.
+    pub status: RequestStatus,
+}
+
+/// Default invitation expiry duration (7 days in seconds).
+pub const DEFAULT_INVITATION_EXPIRY: u64 = 604800;
+
 /// Represents an Ajo group configuration and state.
 ///
 /// An Ajo (also known as Esusu or Tontine) is a rotating savings group
@@ -48,6 +108,10 @@ pub struct Group {
     /// Whether the group has completed all payout cycles.
     /// Once `true`, no further contributions or payouts are accepted.
     pub is_complete: bool,
+
+    /// Access type controlling how new members can join the group.
+    /// Defaults to Open for backward compatibility.
+    pub access_type: GroupAccessType,
 }
 
 /// Records a single member's contribution for a specific cycle.

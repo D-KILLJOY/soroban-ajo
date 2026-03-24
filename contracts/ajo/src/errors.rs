@@ -67,4 +67,28 @@ pub enum AjoError {
 
     /// One of the metadata fields exceeds the length limit.
     MetadataTooLong = 21,
+
+    /// Invitation not found.
+    InvitationNotFound = 22,
+
+    /// Invitation has expired.
+    InvitationExpired = 23,
+
+    /// Invitation has already been accepted.
+    InvitationAlreadyAccepted = 24,
+
+    /// Duplicate invitation exists.
+    DuplicateInvitation = 25,
+
+    /// Join request not found.
+    JoinRequestNotFound = 26,
+
+    /// Duplicate join request exists.
+    DuplicateJoinRequest = 27,
+
+    /// Join request is not pending.
+    JoinRequestNotPending = 28,
+
+    /// Group access is restricted (invite-only or approval required).
+    GroupAccessRestricted = 29,
 }

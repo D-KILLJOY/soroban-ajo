@@ -3,7 +3,10 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 use crate::errors::AjoError;
 use crate::events;
 use crate::storage;
-use crate::types::{Group, GroupMetadata, GroupStatus};
+use crate::types::{
+    Group, GroupAccessType, GroupInvitation, GroupMetadata, GroupStatus, JoinRequest, RequestStatus,
+    DEFAULT_INVITATION_EXPIRY,
+};
 use crate::utils;
 
 /// The main Ajo contract
@@ -67,6 +70,7 @@ impl AjoContract {
     /// * `contribution_amount` - Fixed amount each member contributes per cycle (in stroops, must be > 0)
     /// * `cycle_duration` - Duration of each cycle in seconds (must be > 0)
     /// * `max_members` - Maximum number of members allowed in the group (must be >= 2 and <= 100)
+    /// * `access_type` - The access type for the group (Open, InviteOnly, or ApprovalRequired)
     ///
     /// # Returns
     /// The unique group ID assigned to the new group
@@ -83,6 +87,7 @@ impl AjoContract {
         contribution_amount: i128,
         cycle_duration: u64,
         max_members: u32,
+        access_type: GroupAccessType,
     ) -> Result<u64, AjoError> {
         // Validate parameters
         utils::validate_group_params(contribution_amount, cycle_duration, max_members)?;
@@ -113,6 +118,7 @@ impl AjoContract {
             created_at: now,
             cycle_start_time: now,
             is_complete: false,
+            access_type,
         };
 
         // Store group
@@ -166,6 +172,8 @@ impl AjoContract {
     /// Adds a new member to an active group if space is available.
     /// The member's authentication is required. The member cannot join if they
     /// are already a member, the group is full, or the group has completed all cycles.
+    /// For InviteOnly groups, requires a valid, non-expired invitation.
+    /// For ApprovalRequired groups, direct joining is not allowed.
     ///
     /// # Arguments
     /// * `env` - The Soroban contract environment
@@ -180,6 +188,9 @@ impl AjoContract {
     /// * `MaxMembersExceeded` - If the group has reached max members
     /// * `AlreadyMember` - If the address is already a member
     /// * `GroupComplete` - If the group has completed all cycles
+    /// * `GroupAccessRestricted` - If the group is invite-only or approval-required
+    /// * `InvitationExpired` - If the invitation has expired
+    /// * `InvitationAlreadyAccepted` - If the invitation was already used
     pub fn join_group(env: Env, member: Address, group_id: u64) -> Result<(), AjoError> {
         // Require authentication
         member.require_auth();
@@ -202,11 +213,46 @@ impl AjoContract {
             return Err(AjoError::MaxMembersExceeded);
         }
 
+        // Check access type
+        match group.access_type {
+            GroupAccessType::Open => {
+                // Open groups allow direct joining
+            }
+            GroupAccessType::InviteOnly => {
+                // Check for valid invitation
+                let invitation = storage::get_invitation(&env, group_id, &member)
+                    .ok_or(AjoError::InvitationNotFound)?;
+
+                // Check if invitation is expired
+                let now = utils::get_current_timestamp(&env);
+                if now > invitation.expires_at {
+                    return Err(AjoError::InvitationExpired);
+                }
+
+                // Check if already accepted
+                if invitation.accepted {
+                    return Err(AjoError::InvitationAlreadyAccepted);
+                }
+            }
+            GroupAccessType::ApprovalRequired => {
+                // Direct joining is not allowed for approval-required groups
+                return Err(AjoError::GroupAccessRestricted);
+            }
+        }
+
         // Add member
         group.members.push_back(member.clone());
 
         // Update storage
         storage::store_group(&env, group_id, &group);
+
+        // Mark invitation as accepted if exists
+        if let GroupAccessType::InviteOnly = group.access_type {
+            if let Some(mut invitation) = storage::get_invitation(&env, group_id, &member) {
+                invitation.accepted = true;
+                storage::store_invitation(&env, group_id, &member, &invitation);
+            }
+        }
 
         // Emit event
         events::emit_member_joined(&env, group_id, &member);
@@ -565,5 +611,309 @@ impl AjoContract {
     /// * `GroupNotFound` - If metadata for the group doesn't exist
     pub fn get_group_metadata(env: Env, group_id: u64) -> Result<GroupMetadata, AjoError> {
         storage::get_group_metadata(&env, group_id).ok_or(AjoError::GroupNotFound)
+    }
+
+    /// Invite a member to join a group.
+    ///
+    /// Only the group creator or existing members can send invitations.
+    /// The invited member will be able to join the group using accept_invitation.
+    /// Invitations expire after DEFAULT_INVITATION_EXPIRY seconds (7 days).
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `inviter` - Address of the person sending the invitation (must authenticate)
+    /// * `group_id` - The group to invite to
+    /// * `invitee` - Address of the person being invited
+    ///
+    /// # Returns
+    /// `Ok(())` on successful invitation
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If the group does not exist
+    /// * `NotMember` - If the inviter is not a member of the group
+    /// * `AlreadyMember` - If the invitee is already a member
+    /// * `DuplicateInvitation` - If an invitation already exists for this invitee
+    pub fn invite_member(
+        env: Env,
+        inviter: Address,
+        group_id: u64,
+        invitee: Address,
+    ) -> Result<(), AjoError> {
+        // Require authentication
+        inviter.require_auth();
+
+        // Get group
+        let group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Check if invitee is already a member
+        if utils::is_member(&group.members, &invitee) {
+            return Err(AjoError::AlreadyMember);
+        }
+
+        // Check if inviter is creator or member
+        if !utils::is_member(&group.members, &inviter) {
+            return Err(AjoError::NotMember);
+        }
+
+        // Check for duplicate invitation
+        if storage::has_invitation(&env, group_id, &invitee) {
+            return Err(AjoError::DuplicateInvitation);
+        }
+
+        // Get current timestamp
+        let now = utils::get_current_timestamp(&env);
+
+        // Create invitation
+        let invitation = GroupInvitation {
+            group_id,
+            invitee: invitee.clone(),
+            inviter: inviter.clone(),
+            created_at: now,
+            expires_at: now.saturating_add(DEFAULT_INVITATION_EXPIRY),
+            accepted: false,
+        };
+
+        // Store invitation
+        storage::store_invitation(&env, group_id, &invitee, &invitation);
+
+        // Emit event
+        events::emit_member_invited(&env, group_id, &inviter, &invitee);
+
+        Ok(())
+    }
+
+    /// Accept an invitation to join a group.
+    ///
+    /// The invitee can accept an invitation to join the group.
+    /// The invitation must not be expired and must not have been already accepted.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `invitee` - Address of the person accepting the invitation (must authenticate)
+    /// * `group_id` - The group to join
+    ///
+    /// # Returns
+    /// `Ok(())` on successful join
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If the group does not exist
+    /// * `InvitationNotFound` - If no invitation exists
+    /// * `InvitationExpired` - If the invitation has expired
+    /// * `InvitationAlreadyAccepted` - If the invitation was already used
+    pub fn accept_invitation(
+        env: Env,
+        invitee: Address,
+        group_id: u64,
+    ) -> Result<(), AjoError> {
+        // Require authentication
+        invitee.require_auth();
+
+        // Get invitation
+        let invitation = storage::get_invitation(&env, group_id, &invitee)
+            .ok_or(AjoError::InvitationNotFound)?;
+
+        // Check if invitation is expired
+        let now = utils::get_current_timestamp(&env);
+        if now > invitation.expires_at {
+            return Err(AjoError::InvitationExpired);
+        }
+
+        // Check if already accepted
+        if invitation.accepted {
+            return Err(AjoError::InvitationAlreadyAccepted);
+        }
+
+        // Mark invitation as accepted
+        let mut updated_invitation = invitation;
+        updated_invitation.accepted = true;
+        storage::store_invitation(&env, group_id, &invitee, &updated_invitation);
+
+        // Get group
+        let mut group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Check if group is full
+        if group.members.len() >= group.max_members {
+            return Err(AjoError::MaxMembersExceeded);
+        }
+
+        // Add member
+        group.members.push_back(invitee.clone());
+
+        // Update storage
+        storage::store_group(&env, group_id, &group);
+
+        // Emit events
+        events::emit_invitation_accepted(&env, group_id, &invitee);
+        events::emit_member_joined(&env, group_id, &invitee);
+
+        Ok(())
+    }
+
+    /// Request to join a group.
+    ///
+    /// For groups with ApprovalRequired access type, potential members
+    /// can submit a join request that must be approved by the group creator.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `requester` - Address of the person requesting to join (must authenticate)
+    /// * `group_id` - The group to request to join
+    ///
+    /// # Returns
+    /// `Ok(())` on successful request submission
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If the group does not exist
+    /// * `AlreadyMember` - If the requester is already a member
+    /// * `DuplicateJoinRequest` - If a request already exists
+    /// * `GroupAccessRestricted` - If the group is not ApprovalRequired
+    pub fn request_to_join(
+        env: Env,
+        requester: Address,
+        group_id: u64,
+    ) -> Result<(), AjoError> {
+        // Require authentication
+        requester.require_auth();
+
+        // Get group
+        let group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Check if requester is already a member
+        if utils::is_member(&group.members, &requester) {
+            return Err(AjoError::AlreadyMember);
+        }
+
+        // Check if group is approval-required
+        if !matches!(group.access_type, GroupAccessType::ApprovalRequired) {
+            return Err(AjoError::GroupAccessRestricted);
+        }
+
+        // Check for duplicate request
+        if storage::has_join_request(&env, group_id, &requester) {
+            return Err(AjoError::DuplicateJoinRequest);
+        }
+
+        // Get current timestamp
+        let now = utils::get_current_timestamp(&env);
+
+        // Create join request
+        let request = JoinRequest {
+            group_id,
+            requester: requester.clone(),
+            created_at: now,
+            status: RequestStatus::Pending,
+        };
+
+        // Store request
+        storage::store_join_request(&env, group_id, &requester, &request);
+
+        // Emit event
+        events::emit_join_requested(&env, group_id, &requester);
+
+        Ok(())
+    }
+
+    /// Approve a join request.
+    ///
+    /// Only the group creator can approve join requests.
+    /// Upon approval, the requester is added as a member of the group.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `approver` - Address of the group creator (must authenticate)
+    /// * `group_id` - The group the request is for
+    /// * `requester` - Address of the person whose request to approve
+    ///
+    /// # Returns
+    /// `Ok(())` on successful approval
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If the group does not exist
+    /// * `Unauthorized` - If the approver is not the group creator
+    /// * `JoinRequestNotFound` - If no request exists for this requester
+    /// * `JoinRequestNotPending` - If the request is not pending
+    pub fn approve_join_request(
+        env: Env,
+        approver: Address,
+        group_id: u64,
+        requester: Address,
+    ) -> Result<(), AjoError> {
+        // Require authentication
+        approver.require_auth();
+
+        // Get group
+        let mut group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Check if approver is the creator
+        if group.creator != approver {
+            return Err(AjoError::Unauthorized);
+        }
+
+        // Get join request
+        let mut request = storage::get_join_request(&env, group_id, &requester)
+            .ok_or(AjoError::JoinRequestNotFound)?;
+
+        // Check if request is pending
+        if !matches!(request.status, RequestStatus::Pending) {
+            return Err(AjoError::JoinRequestNotPending);
+        }
+
+        // Update request status
+        request.status = RequestStatus::Approved;
+        storage::store_join_request(&env, group_id, &requester, &request);
+
+        // Add member to group
+        if group.members.len() >= group.max_members {
+            return Err(AjoError::MaxMembersExceeded);
+        }
+
+        group.members.push_back(requester.clone());
+        storage::store_group(&env, group_id, &group);
+
+        // Emit events
+        events::emit_join_approved(&env, group_id, &requester);
+        events::emit_member_joined(&env, group_id, &requester);
+
+        Ok(())
+    }
+
+    /// Get an invitation for a group.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `group_id` - The group the invitation is for
+    /// * `invitee` - The address being invited
+    ///
+    /// # Returns
+    /// The invitation data
+    ///
+    /// # Errors
+    /// * `InvitationNotFound` - If no invitation exists
+    pub fn get_invitation(
+        env: Env,
+        group_id: u64,
+        invitee: Address,
+    ) -> Result<GroupInvitation, AjoError> {
+        storage::get_invitation(&env, group_id, &invitee).ok_or(AjoError::InvitationNotFound)
+    }
+
+    /// Get a join request for a group.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `group_id` - The group the request is for
+    /// * `requester` - The address that submitted the request
+    ///
+    /// # Returns
+    /// The join request data
+    ///
+    /// # Errors
+    /// * `JoinRequestNotFound` - If no request exists
+    pub fn get_join_request(
+        env: Env,
+        group_id: u64,
+        requester: Address,
+    ) -> Result<JoinRequest, AjoError> {
+        storage::get_join_request(&env, group_id, &requester).ok_or(AjoError::JoinRequestNotFound)
     }
 }
