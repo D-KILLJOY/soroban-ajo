@@ -157,3 +157,25 @@ pub fn emit_payout_order_determined(
     let topics = (symbol_short!("porder"), group_id, cycle);
     env.events().publish(topics, (recipient, strategy));
 }
+
+/// Emit an event when a member updates their notification preferences
+pub fn emit_preferences_updated(env: &Env, member: &Address) {
+    let topics = (symbol_short!("notpref"),);
+    env.events().publish(topics, member);
+}
+
+/// Emit an event when a contribution reminder is triggered for a member.
+///
+/// Off-chain notification services should listen for this event and
+/// deliver the appropriate message based on `reminder_type`.
+pub fn emit_reminder_triggered(
+    env: &Env,
+    group_id: u64,
+    member: &Address,
+    reminder_type: u32,
+    deadline: u64,
+) {
+    let topics = (symbol_short!("remind"), group_id);
+    env.events()
+        .publish(topics, (member, reminder_type, deadline));
+}

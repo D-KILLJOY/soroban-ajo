@@ -399,11 +399,39 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "get_group_status"
+                "symbol": "create_group"
               }
             ],
             "data": {
-              "u64": 18446744073709551615
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                },
+                {
+                  "i128": {
+                    "hi": -1,
+                    "lo": 18446744073609551616
+                  }
+                },
+                {
+                  "u64": 604800
+                },
+                {
+                  "u32": 10
+                },
+                {
+                  "u64": 86400
+                },
+                {
+                  "u32": 5
+                },
+                {
+                  "u32": 0
+                }
+              ]
             }
           }
         }
@@ -422,12 +450,12 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_group_status"
+                "symbol": "create_group"
               }
             ],
             "data": {
               "error": {
-                "contract": 1
+                "contract": 17
               }
             }
           }
@@ -448,7 +476,7 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "contract": 17
                 }
               }
             ],
@@ -473,26 +501,75 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "contract": 17
                 }
               }
             ],
             "data": {
               "vec": [
                 {
-                  "string": "contract try_call failed"
+                  "string": "contract call failed"
                 },
                 {
-                  "symbol": "get_group_status"
+                  "symbol": "create_group"
                 },
                 {
                   "vec": [
                     {
-                      "u64": 18446744073709551615
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    },
+                    {
+                      "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                    },
+                    {
+                      "i128": {
+                        "hi": -1,
+                        "lo": 18446744073609551616
+                      }
+                    },
+                    {
+                      "u64": 604800
+                    },
+                    {
+                      "u32": 10
+                    },
+                    {
+                      "u64": 86400
+                    },
+                    {
+                      "u32": 5
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 }
               ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 17
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
             }
           }
         }

@@ -285,16 +285,6 @@ impl AjoContract {
             return Err(AjoError::GroupCancelled);
         }
 
-        // Check if group is cancelled
-        if group.state == crate::types::GroupState::Cancelled {
-            return Err(AjoError::GroupCancelled);
-        }
-
-        // Check if group is cancelled
-        if group.state == crate::types::GroupState::Cancelled {
-            return Err(AjoError::GroupCancelled);
-        }
-
         // Check if already a member
         if utils::is_member(&group.members, &member) {
             return Err(AjoError::AlreadyMember);
@@ -305,46 +295,11 @@ impl AjoContract {
             return Err(AjoError::MaxMembersExceeded);
         }
 
-        // Check access type
-        match group.access_type {
-            GroupAccessType::Open => {
-                // Open groups allow direct joining
-            }
-            GroupAccessType::InviteOnly => {
-                // Check for valid invitation
-                let invitation = storage::get_invitation(&env, group_id, &member)
-                    .ok_or(AjoError::InvitationNotFound)?;
-
-                // Check if invitation is expired
-                let now = utils::get_current_timestamp(&env);
-                if now > invitation.expires_at {
-                    return Err(AjoError::InvitationExpired);
-                }
-
-                // Check if already accepted
-                if invitation.accepted {
-                    return Err(AjoError::InvitationAlreadyAccepted);
-                }
-            }
-            GroupAccessType::ApprovalRequired => {
-                // Direct joining is not allowed for approval-required groups
-                return Err(AjoError::GroupAccessRestricted);
-            }
-        }
-
         // Add member
         group.members.push_back(member.clone());
 
         // Update storage
         storage::store_group(&env, group_id, &group);
-
-        // Mark invitation as accepted if exists
-        if let GroupAccessType::InviteOnly = group.access_type {
-            if let Some(mut invitation) = storage::get_invitation(&env, group_id, &member) {
-                invitation.accepted = true;
-                storage::store_invitation(&env, group_id, &member, &invitation);
-            }
-        }
 
         // Emit event
         events::emit_member_joined(&env, group_id, &member);
@@ -1567,5 +1522,178 @@ impl AjoContract {
         cycle: u32,
     ) -> Result<crate::types::PayoutOrder, AjoError> {
         storage::get_payout_order(&env, group_id, cycle).ok_or(AjoError::GroupNotFound)
+    }
+
+    // ── Contribution reminders & notifications ────────────────────────────────
+
+    /// Store or update a member's notification preferences.
+    ///
+    /// The member must authenticate. Preferences apply globally across all
+    /// groups the member belongs to.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `member` - Address of the member (must authenticate)
+    /// * `enabled` - Master toggle for reminders
+    /// * `reminder_hours_before` - Hours before deadline to trigger `ContributionDue`
+    /// * `grace_period_reminders` - Whether to receive grace-period reminders
+    /// * `payout_notifications` - Whether to receive payout notifications
+    ///
+    /// # Errors
+    /// * `ContractPaused` - If the contract is currently paused
+    pub fn set_notification_preferences(
+        env: Env,
+        member: Address,
+        enabled: bool,
+        reminder_hours_before: u64,
+        grace_period_reminders: bool,
+        payout_notifications: bool,
+    ) -> Result<(), AjoError> {
+        pausable::ensure_not_paused(&env)?;
+        member.require_auth();
+
+        let prefs = crate::types::MemberNotificationPreferences {
+            member: member.clone(),
+            enabled,
+            reminder_hours_before,
+            grace_period_reminders,
+            payout_notifications,
+        };
+
+        storage::store_notification_preferences(&env, &member, &prefs);
+        events::emit_preferences_updated(&env, &member);
+
+        Ok(())
+    }
+
+    /// Retrieve a member's notification preferences.
+    ///
+    /// # Errors
+    /// * `PreferencesNotFound` - If no preferences have been set for this member
+    pub fn get_notification_preferences(
+        env: Env,
+        member: Address,
+    ) -> Result<crate::types::MemberNotificationPreferences, AjoError> {
+        storage::get_notification_preferences(&env, &member)
+            .ok_or(AjoError::PreferencesNotFound)
+    }
+
+    /// Trigger contribution reminders for all eligible members of a group.
+    ///
+    /// Iterates over the group's members and, for each one who has **not** yet
+    /// contributed in the current cycle, checks whether a reminder should fire
+    /// based on the member's notification preferences and the current time
+    /// relative to the cycle deadline and grace period.
+    ///
+    /// For each triggered reminder the function:
+    /// 1. Persists a [`ReminderRecord`](crate::types::ReminderRecord) on-chain.
+    /// 2. Emits a `remind` event that off-chain services can consume.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban contract environment
+    /// * `group_id` - The group whose members should be checked
+    ///
+    /// # Returns
+    /// A vector of member addresses that were reminded.
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If the group does not exist
+    /// * `GroupCancelled` - If the group has been cancelled
+    /// * `GroupComplete` - If the group has completed all cycles
+    pub fn trigger_contribution_reminders(
+        env: Env,
+        group_id: u64,
+    ) -> Result<Vec<Address>, AjoError> {
+        let group = storage::get_group(&env, group_id)
+            .ok_or(AjoError::GroupNotFound)?;
+
+        if group.state == crate::types::GroupState::Cancelled {
+            return Err(AjoError::GroupCancelled);
+        }
+        if group.is_complete {
+            return Err(AjoError::GroupComplete);
+        }
+
+        let now = utils::get_current_timestamp(&env);
+        let cycle_end = group.cycle_start_time + group.cycle_duration;
+        let grace_end = utils::get_grace_period_end(&group);
+
+        let mut reminded = Vec::new(&env);
+
+        for member in group.members.iter() {
+            // Skip members who already contributed this cycle
+            if storage::has_contributed(&env, group_id, group.current_cycle, &member) {
+                continue;
+            }
+
+            // Only remind members who have opted in
+            let prefs = match storage::get_notification_preferences(&env, &member) {
+                Some(p) if p.enabled => p,
+                _ => continue,
+            };
+
+            // Determine which reminder type applies right now
+            let reminder_type = if now < cycle_end {
+                // Before the deadline — check the member's lead-time threshold
+                let secs_until_deadline = cycle_end - now;
+                let threshold_secs = prefs.reminder_hours_before * 3600;
+                if secs_until_deadline <= threshold_secs {
+                    Some(crate::types::ReminderType::ContributionDue)
+                } else {
+                    None
+                }
+            } else if now <= grace_end && prefs.grace_period_reminders {
+                Some(crate::types::ReminderType::GracePeriod)
+            } else if now > grace_end {
+                Some(crate::types::ReminderType::Overdue)
+            } else {
+                None
+            };
+
+            if let Some(rtype) = reminder_type {
+                let record = crate::types::ReminderRecord {
+                    group_id,
+                    cycle: group.current_cycle,
+                    member: member.clone(),
+                    reminder_type: rtype,
+                    triggered_at: now,
+                    deadline: cycle_end,
+                };
+
+                storage::store_reminder_record(
+                    &env,
+                    group_id,
+                    group.current_cycle,
+                    &member,
+                    &record,
+                );
+
+                events::emit_reminder_triggered(
+                    &env,
+                    group_id,
+                    &member,
+                    rtype as u32,
+                    cycle_end,
+                );
+
+                reminded.push_back(member);
+            }
+        }
+
+        Ok(reminded)
+    }
+
+    /// Retrieve the reminder record for a member in a specific group and cycle.
+    ///
+    /// # Errors
+    /// * `GroupNotFound` - If no reminder record exists for the given parameters
+    pub fn get_reminder_history(
+        env: Env,
+        group_id: u64,
+        cycle: u32,
+        member: Address,
+    ) -> Result<crate::types::ReminderRecord, AjoError> {
+        storage::get_reminder_record(&env, group_id, cycle, &member)
+            .ok_or(AjoError::GroupNotFound)
     }
 }

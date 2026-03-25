@@ -1,6 +1,5 @@
 use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 
-use crate::types::{GroupInvitation, JoinRequest};
 
 /// Logical storage key categories used by the Ajo contract.
 ///
@@ -629,5 +628,54 @@ pub fn get_payout_order(
     cycle: u32,
 ) -> Option<crate::types::PayoutOrder> {
     let key = (symbol_short!("PORDER"), group_id, cycle);
+    env.storage().persistent().get(&key)
+}
+
+// ── Contribution reminder helpers ─────────────────────────────────────────────
+
+/// Stores a member's notification preferences in persistent storage.
+///
+/// Keyed by member address so each member has exactly one preferences record
+/// that applies across all groups.
+pub fn store_notification_preferences(
+    env: &Env,
+    member: &Address,
+    prefs: &crate::types::MemberNotificationPreferences,
+) {
+    let key = (symbol_short!("NOTPREF"), member);
+    env.storage().persistent().set(&key, prefs);
+}
+
+/// Retrieves a member's notification preferences, if set.
+pub fn get_notification_preferences(
+    env: &Env,
+    member: &Address,
+) -> Option<crate::types::MemberNotificationPreferences> {
+    let key = (symbol_short!("NOTPREF"), member);
+    env.storage().persistent().get(&key)
+}
+
+/// Stores a reminder record for a specific group, cycle, and member.
+///
+/// Uses a composite key so the latest reminder per member per cycle is retained.
+pub fn store_reminder_record(
+    env: &Env,
+    group_id: u64,
+    cycle: u32,
+    member: &Address,
+    record: &crate::types::ReminderRecord,
+) {
+    let key = (symbol_short!("REMIND"), group_id, cycle, member);
+    env.storage().persistent().set(&key, record);
+}
+
+/// Retrieves the most recent reminder record for a member in a given cycle.
+pub fn get_reminder_record(
+    env: &Env,
+    group_id: u64,
+    cycle: u32,
+    member: &Address,
+) -> Option<crate::types::ReminderRecord> {
+    let key = (symbol_short!("REMIND"), group_id, cycle, member);
     env.storage().persistent().get(&key)
 }

@@ -392,3 +392,56 @@ pub struct InsurancePool {
     /// Total amount of claims filed.
     pub pending_claims_count: u32,
 }
+
+/// Classification of contribution reminders sent to members.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ReminderType {
+    /// Cycle is about to start; heads-up to prepare funds.
+    CycleStarting = 0,
+    /// Contribution deadline is approaching within the member's threshold.
+    ContributionDue = 1,
+    /// Cycle ended but member is still within the grace period.
+    GracePeriod = 2,
+    /// Past the grace period — contribution is overdue.
+    Overdue = 3,
+}
+
+/// Per-member notification preferences stored on-chain.
+///
+/// Members opt-in to reminders by calling `set_notification_preferences`.
+/// Off-chain services listen for reminder events and deliver notifications
+/// according to these preferences.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberNotificationPreferences {
+    /// The member these preferences belong to.
+    pub member: Address,
+    /// Master toggle — when `false`, no reminders are emitted for this member.
+    pub enabled: bool,
+    /// How many hours before the cycle deadline a `ContributionDue` reminder fires.
+    pub reminder_hours_before: u64,
+    /// Whether to send reminders during the grace period.
+    pub grace_period_reminders: bool,
+    /// Whether to notify the member about payout events.
+    pub payout_notifications: bool,
+}
+
+/// On-chain record of a reminder that was triggered for a member.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReminderRecord {
+    /// The group this reminder pertains to.
+    pub group_id: u64,
+    /// The cycle at the time the reminder was triggered.
+    pub cycle: u32,
+    /// The member who was reminded.
+    pub member: Address,
+    /// The kind of reminder that fired.
+    pub reminder_type: ReminderType,
+    /// Ledger timestamp when the reminder was created.
+    pub triggered_at: u64,
+    /// The contribution deadline the reminder relates to.
+    pub deadline: u64,
+}

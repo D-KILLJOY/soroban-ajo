@@ -3,6 +3,7 @@ mod group_status_tests;
 mod integration_tests;
 mod metadata_tests;
 mod payout_ordering_tests;
+mod reminder_tests;
 mod security_tests;
 mod validation_tests;
 

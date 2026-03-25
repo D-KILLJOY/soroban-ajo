@@ -145,4 +145,7 @@ pub enum AjoError {
 
     /// No eligible members remain for payout selection (all have been paid).
     NoEligibleMembers = 47,
+
+    /// No notification preferences found for this member.
+    PreferencesNotFound = 48,
 }
