@@ -1,16 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
-import { Link } from '@/navigation'
+import Link from 'next/link'
+import { GamificationDashboard } from '@/components/GamificationDashboard'
 import { GroupCard } from '@/components/GroupCard'
 import { useAuthContext } from '@/context/AuthContext'
 
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
-  const { isAuthenticated } = useAuthContext()
-  const t = useTranslations('dashboard')
-  const tGroup = useTranslations('group')
+  const { isAuthenticated, address } = useAuthContext()
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 1500)
@@ -31,7 +29,11 @@ export default function DashboardPage() {
 
       {isAuthenticated ? (
         <>
-          {/* Stat Cards */}
+          <div className="mb-8">
+            <GamificationDashboard walletAddress={address || undefined} />
+          </div>
+
+          {/* Stat Cards Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-2">{t('activeGroups')}</h3>
