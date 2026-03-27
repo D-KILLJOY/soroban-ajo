@@ -190,6 +190,9 @@ export default function DashboardPage() {
                 <Link href="/groups" className="btn-secondary px-4 py-2 text-xs rounded-xl">
                   Browse Groups
                 </Link>
+                <Link href="/transactions" className="btn-secondary px-4 py-2 text-xs rounded-xl">
+                  Transactions
+                </Link>
                 <Link href="/profile" className="btn-ghost px-4 py-2 text-xs rounded-xl border border-surface-200 dark:border-slate-700">
                   My Profile
                 </Link>
