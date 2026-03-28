@@ -2,6 +2,9 @@
  * KYC Service - wraps calls to the backend KYC endpoints.
  */
 
+import { ApiError, nextApiClient } from '@/lib/apiClient'
+import { apiPaths } from '@/lib/apiEndpoints'
+
 type KycStatusResponse = {
   status: {
     level: number
@@ -13,31 +16,43 @@ type KycStatusResponse = {
   }
 }
 
+function errorMessageFromApi(e: unknown, fallback: string): string {
+  if (e instanceof ApiError && e.body && typeof e.body === 'object' && 'error' in e.body) {
+    const msg = (e.body as { error?: unknown }).error
+    if (typeof msg === 'string') return msg
+  }
+  return fallback
+}
+
 export class KycService {
   static async getStatus(): Promise<KycStatusResponse['status']> {
-    const res = await fetch('/api/kyc/status', { method: 'GET' })
-    if (!res.ok) throw new Error('Failed to fetch KYC status')
-    const data: KycStatusResponse = await res.json()
+    const data = await nextApiClient.request<KycStatusResponse>({
+      path: apiPaths.kyc.status,
+      method: 'GET',
+    })
     return data.status
   }
 
   static async requestVerification(): Promise<void> {
-    const res = await fetch('/api/kyc/request', { method: 'POST' })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error || 'Failed to request verification')
+    try {
+      await nextApiClient.request({
+        path: apiPaths.kyc.request,
+        method: 'POST',
+      })
+    } catch (e) {
+      throw new Error(errorMessageFromApi(e, 'Failed to request verification'))
     }
   }
 
   static async uploadDocument(docType: string, data: string): Promise<void> {
-    const res = await fetch('/api/kyc/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ docType, data }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error || 'Failed to upload document')
+    try {
+      await nextApiClient.request({
+        path: apiPaths.kyc.upload,
+        method: 'POST',
+        body: { docType, data },
+      })
+    } catch (e) {
+      throw new Error(errorMessageFromApi(e, 'Failed to upload document'))
     }
   }
 }

@@ -1,5 +1,8 @@
 // Analytics and monitoring service for tracking user actions and performance
 
+import { nextApiClient } from '@/lib/apiClient'
+import { apiPaths } from '@/lib/apiEndpoints'
+
 export interface AnalyticsEvent {
   category: string
   action: string
@@ -195,11 +198,14 @@ class AnalyticsService {
 
   private sendToBackend(type: string, data: any) {
     if (typeof window === 'undefined') return
-    fetch('/api/analytics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, data }),
-    }).catch(err => console.error('Failed to send analytics', err))
+    void nextApiClient
+      .request({
+        path: apiPaths.analytics.post,
+        method: 'POST',
+        body: { type, data },
+        skipRetry: true,
+      })
+      .catch((err: unknown) => console.error('Failed to send analytics', err))
   }
 }
 
