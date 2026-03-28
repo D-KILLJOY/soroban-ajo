@@ -14,6 +14,7 @@ import { chatRouter } from '../chat'
 import { notificationsRouter } from '../notifications'
 import { webhooksRouter } from '../webhooks'
 import activityRouter from '../activity.routes'
+import { reportsRouter } from '../reports'
 import { createIpLimiter, createUserLimiter } from '../../middleware/rateLimiter'
 
 /**
@@ -48,5 +49,6 @@ v2Router.use('/referrals', referralsRouter)
 v2Router.use('/chat', createUserLimiter(), chatRouter)
 v2Router.use('/notifications', createUserLimiter(), notificationsRouter)
 v2Router.use('/activity', activityRouter)
+v2Router.use('/reports', reportsRouter)
 
 export { v2Router }

@@ -14,6 +14,7 @@ import { chatRouter } from '../chat'
 import { notificationsRouter } from '../notifications'
 import { webhooksRouter } from '../webhooks'
 import activityRouter from '../activity.routes'
+import { reportsRouter } from '../reports'
 import { createIpLimiter, createUserLimiter } from '../../middleware/rateLimiter'
 
 const v1Router = Router()
@@ -33,5 +34,6 @@ v1Router.use('/referrals', referralsRouter)
 v1Router.use('/chat', createUserLimiter(), chatRouter)
 v1Router.use('/notifications', createUserLimiter(), notificationsRouter)
 v1Router.use('/activity', activityRouter)
+v1Router.use('/reports', reportsRouter)
 
 export { v1Router }
