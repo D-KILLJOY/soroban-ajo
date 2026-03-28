@@ -1,72 +1,242 @@
-// Issue #20: Global layout shell - Mobile Navigation component
-// Complexity: Trivial (100 pts)
+'use client'
 
-import React, { useState } from 'react'
+/**
+ * MobileNav
+ *
+ * Mobile navigation (hidden on lg+). Consists of:
+ * - A floating action button (FAB) fixed to the bottom-right
+ * - A slide-up drawer with glassmorphism background
+ * - A semi-transparent backdrop that closes the drawer on click
+ *
+ * Keyboard: Escape closes the drawer. Focus is trapped inside while open.
+ */
 
-interface MobileNavProps {
-  currentView?: string
-  onNavigate?: (view: string) => void
+import React, { useRef, useEffect } from 'react'
+import Link from 'next/link'
+import { useNavigation } from '@/hooks/useNavigation'
+import { WalletConnector } from './WalletConnector'
+import { NotificationBell } from './NotificationBell'
+
+interface NavItem {
+  href: string
+  label: string
+  icon: string
+  dataTour?: string
+  badge?: number | string
 }
 
-export const MobileNav: React.FC<MobileNavProps> = ({ currentView, onNavigate }) => {
-  const [isOpen, setIsOpen] = useState(false)
+interface MobileNavProps {
+  navItems: NavItem[]
+}
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'create', label: 'Create Group', icon: '➕' },
-    { id: 'detail', label: 'My Groups', icon: '👥' },
-    { id: 'analytics', label: 'Analytics', icon: '📈' },
-  ]
+export const MobileNav: React.FC<MobileNavProps> = ({ navItems }) => {
+  const { isSidebarOpen, toggleSidebar, closeSidebar, isActive } = useNavigation()
+  const drawerRef = useRef<HTMLDivElement>(null)
+  const fabRef = useRef<HTMLButtonElement>(null)
 
-  const handleNavigate = (view: string) => {
-    onNavigate?.(view)
-    setIsOpen(false)
-  }
+  // Return focus to FAB when drawer closes
+  useEffect(() => {
+    if (!isSidebarOpen) fabRef.current?.focus()
+  }, [isSidebarOpen])
+
+  // Trap focus inside drawer
+  useEffect(() => {
+    if (!isSidebarOpen || !drawerRef.current) return
+    const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    first?.focus()
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus() }
+      }
+    }
+    document.addEventListener('keydown', handleTab)
+    return () => document.removeEventListener('keydown', handleTab)
+  }, [isSidebarOpen])
 
   return (
     <div className="lg:hidden">
-      {/* Hamburger Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-2 rounded-lg hover:bg-gray-100"
-        aria-label="Toggle menu"
+      {/* Backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-surface-900/50 backdrop-blur-sm animate-fade-in"
+          onClick={closeSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Slide-up drawer */}
+      <div
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation menu"
+        className={[
+          'fixed bottom-0 left-0 right-0 z-50',
+          'rounded-t-3xl border-t border-white/40 dark:border-white/10',
+          'bg-white/90 dark:bg-surface-900/90',
+          'supports-[backdrop-filter]:backdrop-blur-xl supports-[backdrop-filter]:saturate-150',
+          'shadow-2xl shadow-surface-900/20 dark:shadow-black/60',
+          'transition-transform duration-300 ease-out',
+          isSidebarOpen ? 'translate-y-0' : 'translate-y-full',
+          'pb-safe', // safe-area-inset-bottom
+        ].join(' ')}
       >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          {isOpen ? (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          ) : (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          )}
-        </svg>
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1" aria-hidden="true">
+          <div className="w-10 h-1 rounded-full bg-surface-300 dark:bg-surface-600" />
+        </div>
+
+        {/* Header row */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-surface-100/60 dark:border-white/10">
+          <span className="font-bold text-surface-900 dark:text-surface-50 text-lg">🪙 Ajo</span>
+          <button
+            onClick={closeSidebar}
+            className="p-2 rounded-xl text-surface-500 hover:text-surface-900 dark:hover:text-surface-100 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            aria-label="Close navigation"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Nav items */}
+        <nav className="px-4 py-3 space-y-1" aria-label="Mobile navigation">
+          {navItems.map((item) => {
+            const active = isActive(item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                data-tour={item.dataTour}
+                aria-current={active ? 'page' : undefined}
+                className={[
+                  'flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-medium',
+                  'transition-all duration-200 outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-primary-500',
+                  active
+                    ? 'bg-gradient-to-r from-primary-500 to-accent-500 text-white shadow-glow-sm'
+                    : 'text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800',
+                ].join(' ')}
+              >
+                <svg
+                  className={[
+                    'w-5 h-5 flex-shrink-0 transition-transform duration-200',
+                    active ? 'text-white' : 'text-surface-500 dark:text-surface-400',
+                  ].join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                </svg>
+                <span className="flex-1">{item.label}</span>
+                {item.badge !== undefined && (
+                  <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center bg-primary-500 text-white animate-pulse-slow">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* Wallet section */}
+        <div className="px-5 py-4 border-t border-surface-100/60 dark:border-white/10">
+          <div data-tour="wallet-connect">
+            <WalletConnector />
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Action Button */}
+      <button
+        ref={fabRef}
+        onClick={toggleSidebar}
+        aria-expanded={isSidebarOpen}
+        aria-controls="mobile-nav-drawer"
+        aria-label={isSidebarOpen ? 'Close navigation' : 'Open navigation'}
+        className={[
+          'fixed bottom-6 right-5 z-50',
+          'w-14 h-14 rounded-full',
+          'bg-gradient-to-br from-primary-500 to-accent-500',
+          'shadow-xl shadow-primary-500/40',
+          'flex items-center justify-center',
+          'transition-all duration-300',
+          'active:scale-95 hover:scale-105 hover:shadow-glow-md',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
+          isSidebarOpen ? 'rotate-45' : 'rotate-0',
+        ].join(' ')}
+      >
+        {isSidebarOpen ? (
+          /* X icon */
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        ) : (
+          /* Hamburger icon */
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        )}
       </button>
 
-      {/* Mobile Menu Overlay */}
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setIsOpen(false)}
-          />
-          <nav className="fixed top-16 left-0 right-0 bg-white shadow-lg z-50 p-4">
-            <div className="space-y-2">
-              {menuItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavigate(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${
-                    currentView === item.id
-                      ? 'bg-blue-50 text-blue-600 font-medium'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+      {/* Bottom quick-nav bar (always visible on mobile) */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 lg:hidden"
+        aria-label="Quick navigation"
+      >
+        <div className="flex items-center justify-around bg-white/90 dark:bg-surface-900/90 supports-[backdrop-filter]:backdrop-blur-xl border-t border-surface-100/60 dark:border-white/10 px-2 pb-safe pt-2">
+          {navItems.slice(0, 4).map((item) => {
+            const active = isActive(item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                aria-label={item.label}
+                className={[
+                  'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl min-w-[3rem]',
+                  'transition-all duration-200 outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-primary-500',
+                  active ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500',
+                ].join(' ')}
+              >
+                <svg
+                  className={[
+                    'w-5 h-5 transition-transform duration-200',
+                    active ? 'scale-110' : '',
+                  ].join(' ')}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
-                  <span className="text-xl">{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </nav>
-        </>
-      )}
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2.5 : 2} d={item.icon} />
+                </svg>
+                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+                {active && (
+                  <span className="w-1 h-1 rounded-full bg-primary-500" aria-hidden="true" />
+                )}
+              </Link>
+            )
+          })}
+          {/* Notifications shortcut */}
+          <div className="flex flex-col items-center gap-1 px-3 py-1.5">
+            <NotificationBell />
+            <span className="text-[10px] font-medium text-surface-400 dark:text-surface-500 leading-none">Alerts</span>
+          </div>
+        </div>
+      </nav>
     </div>
   )
 }
